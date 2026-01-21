@@ -1,0 +1,956 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Limex Strategy Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #1e293b; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "react": "https://esm.sh/react@18.2.0",
+      "react-dom": "https://esm.sh/react-dom@18.2.0",
+      "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+      "recharts": "https://esm.sh/recharts@2.10.3?external=react,react-dom",
+      "lucide-react": "https://esm.sh/lucide-react@0.294.0?external=react"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import React, { useState, useEffect, useRef } from 'react';
+    import { createRoot } from 'react-dom/client';
+    import {
+      LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+      PieChart, Pie, Cell, BarChart, Bar, Legend
+    } from 'recharts';
+    import {
+      TrendingUp, DollarSign, Activity, AlertTriangle,
+      PieChart as PieIcon, Shield, Zap, Target,
+      Layers, TrendingDown, Award, AlertOctagon,
+      Clock, RefreshCw, Anchor, Sparkles, FileText,
+      MessageSquare, Send, X, Loader2, ChevronDown, ChevronUp, ArrowUp, Briefcase,
+      ArrowRightLeft, BarChart2, LayoutDashboard, Info, CheckCircle, AlertCircle, Calendar
+    } from 'lucide-react';
+
+    // --- Gemini API Configuration ---
+    const apiKey = ""; // System will provide key at runtime
+
+    async function callGemini(prompt, systemInstruction = "") {
+      if (!apiKey) {
+        console.error("API Key missing");
+        return "Error: API Key is missing. Please check configuration.";
+      }
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+      const payload = {
+        contents: [{ parts: [{ text: prompt }] }],
+        systemInstruction: { parts: [{ text: systemInstruction }] }
+      };
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const data = await response.json();
+        return data.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
+      } catch (error) {
+        console.error("Gemini API Error:", error);
+        return "I'm having trouble connecting to the AI analyst right now. Please try again.";
+      }
+    }
+
+    // --- DATA CONSTANTS ---
+
+    // Strategy A: Limex-MidH (Original)
+    const STRATEGY_A_DATA = {
+      name: "Alpha Barbell (Mid-Horizon)",
+      shortName: "Alpha Barbell",
+      description: "Balances 'Old Economy' value (Energy, Materials) with 'New Economy' growth (Tech). Thrives in inflation.",
+      annualReturns: [
+        { year: '2021', factor: 1.564, returnPct: 56.4 },
+        { year: '2022', factor: 1.069, returnPct: 6.9 },
+        { year: '2023', factor: 1.311, returnPct: 31.1 },
+        { year: '2024', factor: 1.033, returnPct: 3.3 },
+        { year: '2025', factor: 1.440, returnPct: 44.0 },
+        { year: '2026 (YTD)', factor: 1.058, returnPct: 5.8 }
+      ],
+      sectorAllocation: [
+        { name: 'Energy', value: 22.5, color: '#10b981' },
+        { name: 'Technology', value: 20.0, color: '#3b82f6' },
+        { name: 'Materials', value: 17.5, color: '#f59e0b' },
+        { name: 'Industrials', value: 15.0, color: '#6366f1' },
+        { name: 'Other', value: 25.0, color: '#64748b' },
+      ],
+      currentHoldings: [
+        { Symbol: 'BTG', Weight: 0.1223, Name: 'B2Gold Corp', Returns: { '1M': -0.0018, 'YTD': 0.0296, '1Y': 0.6906 } },
+        { Symbol: 'CDW', Weight: 0.1212, Name: 'CDW Corp', Returns: { '1M': -0.0635, 'YTD': -0.0077, '1Y': -0.3079 } },
+        { Symbol: 'BHE', Weight: 0.0945, Name: 'Benchmark Electronics', Returns: { '1M': 0.0083, 'YTD': 0.0256, '1Y': 0.4208 } },
+        { Symbol: 'MYE', Weight: 0.0834, Name: 'Myers Industries', Returns: { '1M': 0.0107, 'YTD': 0.0590, '1Y': 2.0755 } },
+        { Symbol: 'CNDT', Weight: 0.0765, Name: 'Conduent Inc', Returns: { '1M': -0.0155, 'YTD': -0.0007, '1Y': -0.2047 } },
+        { Symbol: 'GRC', Weight: 0.0653, Name: 'Gorman-Rupp Co', Returns: { '1M': 0.0504, 'YTD': 0.0581, '1Y': 1.0334 } },
+        { Symbol: 'DDD', Weight: 0.0598, Name: '3D Systems', Returns: { '1M': -0.0019, 'YTD': -0.0007, '1Y': -0.0251 } },
+        { Symbol: 'EXE', Weight: 0.0586, Name: 'Extendicare Inc', Returns: { '1M': -0.0051, 'YTD': -0.0434, '1Y': 0.2946 } },
+        { Symbol: 'XOM', Weight: 0.0539, Name: 'Exxon Mobil', Returns: { '1M': 0.0470, 'YTD': 0.0211, '1Y': 0.3634 } },
+        { Symbol: 'CPA', Weight: 0.0486, Name: 'Copa Holdings', Returns: { '1M': 0.1282, 'YTD': 0.0609, '1Y': 1.1846 } },
+      ],
+      factors: [
+        { name: 'Value', value: 74, desc: 'Exposure to undervalued assets' },
+        { name: 'Momentum', value: 59, desc: 'Trend-following behavior' },
+        { name: 'Volatility', value: 37, desc: 'Sensitivity to market swings' },
+        { name: 'Size', value: 52, desc: 'Market cap bias (High = Large Cap)' },
+        { name: 'Quality', value: 50, desc: 'Balance sheet strength' },
+      ],
+      performanceHighlights: [
+        { year: '2008', event: 'Financial Crisis', strategy: '-7.2%', benchmark: '-37.0%', context: 'Defensive. Rotated into commodities.' },
+        { year: '2022', event: 'Inflation Spike', strategy: '+6.9%', benchmark: '-19.4%', context: 'Inflation Hedge. Profited from Energy.' },
+        { year: '2009', event: 'Recovery Boom', strategy: '+62.7%', benchmark: '+26.5%', context: 'Aggressive Upside. Captured rebound.' },
+      ],
+      stats: {
+        totalReturn: '+106.4%',
+        cagr: '~27.5%',
+        maxDrawdown: '-54.0%',
+        topSector: 'Energy'
+      },
+      analysis: {
+        executiveSummary: "A Long-Only, Sector-Focused Equity Strategy that utilizes a 'Barbell' approach. By balancing 'Old Economy' sectors (Energy, Materials) with 'New Economy' exposure (Tech), it aims to perform in both inflationary environments and growth rallies. It is designed to be resilient during liquidity crises (like 2008) while capturing significant upside during recoveries.",
+        mechanics: [
+          { title: "The 'Barbell' Allocation", desc: "Maintains ~40% exposure to hard assets (Energy/Materials) and ~20% to Tech, largely ignoring Consumer Staples and Utilities." },
+          { title: "Weekly Rebalancing", desc: "High turnover strategy that rebalances weekly to capture short-term momentum shifts between sectors." },
+          { title: "Asymmetric Exit Rules", desc: "Systematically takes profit at +40% gains but employs no stop-loss, relying on mean reversion for losing positions." }
+        ],
+        strengths: [
+          { title: "Inflation Hedge", desc: "Thrives in high-inflation environments (e.g., 2022) where broad markets fail, due to heavy Commodity exposure." },
+          { title: "Massive Alpha Generation", desc: "Significantly outperforms the S&P 500 in recovery years (2009, 2016, 2025) and crisis years (2008)." },
+          { title: "Defensive Rotation", desc: "Proven ability to limit losses during major crashes better than the benchmark." }
+        ],
+        weaknesses: [
+          { title: "Deep Drawdowns", desc: "Despite defensive strengths, it can suffer massive drops (Max Drawdown: -54%). It does not use cash hedging." },
+          { title: "No Downside Protection", desc: "Lack of stop-loss means a bad stock pick can drag performance for months before recovery." },
+          { title: "Sector Concentration", desc: "If both Energy and Tech fall simultaneously (rare but possible), the portfolio has nowhere to hide." }
+        ]
+      }
+    };
+
+    // Strategy B: Limex-High Risk (New)
+    const STRATEGY_B_DATA = {
+      name: "High-Octane Growth (High Risk)",
+      shortName: "High-Octane Growth",
+      description: "Aggressive, concentrated bets on Financials and Tech. High volatility for maximum long-term compounding.",
+      annualReturns: [
+        { year: '2021', factor: 1.350, returnPct: 35.0 },
+        { year: '2022', factor: 0.917, returnPct: -8.3 },
+        { year: '2023', factor: 0.649, returnPct: -35.1 },
+        { year: '2024', factor: 0.955, returnPct: -4.5 },
+        { year: '2025', factor: 1.344, returnPct: 34.4 },
+        { year: '2026 (YTD)', factor: 1.024, returnPct: 2.4 }
+      ],
+      sectorAllocation: [
+        { name: 'Banks', value: 9.7, color: '#6366f1' },
+        { name: 'Semiconductors', value: 7.8, color: '#8b5cf6' },
+        { name: 'Insurance', value: 6.9, color: '#ec4899' },
+        { name: 'Pharma', value: 5.9, color: '#14b8a6' },
+        { name: 'Hardware', value: 4.9, color: '#f97316' },
+      ],
+      currentHoldings: [
+        { Symbol: 'NTAP', Weight: 0.140, Name: 'NetApp Inc', Returns: { '1M': 0.05, 'YTD': 0.02, '1Y': 0.45 } },
+        { Symbol: 'MS', Weight: 0.131, Name: 'Morgan Stanley', Returns: { '1M': 0.03, 'YTD': 0.04, '1Y': 0.22 } },
+        { Symbol: 'ALL', Weight: 0.118, Name: 'Allstate Corp', Returns: { '1M': 0.01, 'YTD': 0.01, '1Y': 0.15 } },
+        { Symbol: 'C', Weight: 0.082, Name: 'Citigroup Inc', Returns: { '1M': -0.02, 'YTD': 0.00, '1Y': 0.10 } },
+        { Symbol: 'IVZ', Weight: 0.081, Name: 'Invesco Ltd', Returns: { '1M': 0.04, 'YTD': 0.03, '1Y': 0.18 } },
+        { Symbol: 'UNH', Weight: 0.069, Name: 'UnitedHealth', Returns: { '1M': -0.01, 'YTD': -0.02, '1Y': 0.05 } },
+        { Symbol: 'KMB', Weight: 0.069, Name: 'Kimberly-Clark', Returns: { '1M': 0.02, 'YTD': 0.01, '1Y': 0.08 } },
+        { Symbol: 'PSX', Weight: 0.053, Name: 'Phillips 66', Returns: { '1M': 0.06, 'YTD': 0.05, '1Y': 0.30 } },
+        { Symbol: 'MTCH', Weight: 0.033, Name: 'Match Group', Returns: { '1M': -0.05, 'YTD': -0.04, '1Y': -0.20 } },
+        { Symbol: 'AOS', Weight: 0.033, Name: 'A.O. Smith', Returns: { '1M': 0.02, 'YTD': 0.01, '1Y': 0.12 } },
+      ],
+      factors: [
+        { name: 'Value', value: 68, desc: 'Strong bias towards undervalued assets' },
+        { name: 'Momentum', value: 60, desc: 'Contrarian; buys beaten-down stocks' },
+        { name: 'Volatility', value: 41, desc: 'Extremely high Beta' },
+        { name: 'Size', value: 57, desc: 'Focus on Large Cap established names' },
+        { name: 'Quality', value: 60, desc: 'Preference for profitability' },
+      ],
+      performanceHighlights: [
+        { year: '2008', event: 'Financial Crisis', strategy: '-51.1%', benchmark: '-37.0%', context: 'High Beta. Suffered significantly.' },
+        { year: '2009', event: 'Recovery Boom', strategy: '+81.6%', benchmark: '+26.5%', context: 'Explosive Rebound. Outpaced market 3x.' },
+        { year: '2022', event: 'Inflation Spike', strategy: '-8.3%', benchmark: '-19.4%', context: 'Resilient. Value factor provided cover.' },
+      ],
+      stats: {
+        totalReturn: '+1520%',
+        cagr: '~17.2%',
+        maxDrawdown: '-71.6%',
+        topSector: 'Financials'
+      },
+      analysis: {
+        executiveSummary: "An aggressive, high-octane growth strategy focused on cyclical recovery and high-beta sectors. By concentrating capital in Financials and Semiconductors, it aims to maximize upside during bull markets. It accepts massive volatility and significant drawdowns in exchange for superior long-term compounding potential.",
+        mechanics: [
+          { title: "High Concentration", desc: "Top 10 holdings frequently exceed 60% of the portfolio, concentrating risk to maximize potential returns." },
+          { title: "High Beta Bias", desc: "Deliberately targets stocks that are more volatile than the market (Volatility Factor 95/100) to amplify market moves." },
+          { title: "Cyclical Rotation", desc: "Heavily overweight Banks, Insurance, and Semiconductors, rotating aggressively based on economic cycle indicators." }
+        ],
+        strengths: [
+          { title: "Explosive Bull Returns", desc: "Capable of massive outperformance in recovery years (e.g., +81% in 2009, +34% in 2025)." },
+          { title: "Long-Term Compounding", desc: "Despite volatility, the strategy has delivered +1520% total return over its lifetime." },
+          { title: "Deep Value Capture", desc: "Strong focus on undervalued assets (Value Factor 81) allows it to buy the dip effectively." }
+        ],
+        weaknesses: [
+          { title: "Catastrophic Drawdowns", desc: "Suffered a -71.6% drawdown in 2008 and -53% in 2020. Not suitable for capital preservation." },
+          { title: "High Volatility", desc: "Extreme daily and monthly swings make it difficult for investors to hold during turbulent periods." },
+          { title: "Cyclical Drag", desc: "Can underperform significantly for years (e.g., 2023-2024) when its core sectors fall out of favor." }
+        ]
+      }
+    };
+
+    // --- COMPONENTS ---
+
+    const MetricCard = ({ title, value, subtext, icon: Icon, trend }) => (
+      React.createElement('div', { className: "bg-slate-800 border border-slate-700 rounded-xl p-5 flex items-start space-x-4 hover:border-slate-600 transition-colors" },
+        React.createElement('div', { className: `p-3 rounded-lg ${trend === 'positive' ? 'bg-emerald-500/10 text-emerald-400' : trend === 'negative' ? 'bg-red-500/10 text-red-400' : 'bg-blue-500/10 text-blue-400'}` },
+          React.createElement(Icon, { size: 24 })
+        ),
+        React.createElement('div', null,
+          React.createElement('p', { className: "text-slate-400 text-sm font-medium" }, title),
+          React.createElement('h3', { className: `text-2xl font-bold mt-1 ${trend === 'negative' ? 'text-red-400' : 'text-white'}` }, value),
+          subtext && React.createElement('p', { className: "text-slate-500 text-xs mt-1" }, subtext)
+        )
+      )
+    );
+
+    const SectionTitle = ({ title, subtitle, icon: Icon, rightContent }) => (
+      React.createElement('div', { className: "mb-6 flex items-start justify-between" },
+        React.createElement('div', null,
+          React.createElement('h2', { className: "text-xl font-bold text-white flex items-center gap-2" },
+            Icon && React.createElement(Icon, { className: "text-emerald-400", size: 24 }),
+            title
+          ),
+          subtitle && React.createElement('p', { className: "text-slate-400 text-sm mt-1" }, subtitle)
+        ),
+        rightContent
+      )
+    );
+
+    const CollapsibleCard = ({ title, icon: Icon, children, defaultExpanded = false }) => {
+      const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+
+      return React.createElement('div', { className: "bg-slate-800 border border-slate-700 rounded-xl overflow-hidden transition-all duration-300" },
+        React.createElement('div', {
+          className: "p-6 flex justify-between items-center cursor-pointer hover:bg-slate-750",
+          onClick: () => setIsExpanded(!isExpanded)
+        },
+          React.createElement('h3', { className: "text-white font-bold flex items-center gap-2" },
+            Icon && React.createElement(Icon, { size: 20, className: "text-emerald-400" }),
+            title
+          ),
+          React.createElement('div', { className: "text-slate-400" },
+            isExpanded ? React.createElement(ChevronUp, { size: 20 }) : React.createElement(ChevronDown, { size: 20 })
+          )
+        ),
+        isExpanded && React.createElement('div', { className: "px-6 pb-6" }, children)
+      );
+    };
+
+    const AnalysisCard = ({ title, items, type }) => (
+      React.createElement('div', { className: "bg-slate-900/50 border border-slate-700/50 rounded-lg p-5 h-full" },
+        React.createElement('h3', { className: `text-sm font-bold mb-4 flex items-center gap-2 ${type === 'strength' ? 'text-emerald-400' : 'text-red-400'}` },
+          type === 'strength' ? React.createElement(Award, { size: 18 }) : React.createElement(AlertOctagon, { size: 18 }),
+          title
+        ),
+        React.createElement('ul', { className: "space-y-4" },
+          items.map((item, idx) =>
+            React.createElement('li', { key: idx, className: "flex items-start gap-3" },
+              React.createElement('div', { className: `mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${type === 'strength' ? 'bg-emerald-500' : 'bg-red-500'}` }),
+              React.createElement('div', null,
+                React.createElement('span', { className: "text-slate-200 font-medium block text-sm" }, item.title),
+                React.createElement('span', { className: "text-slate-400 text-xs leading-relaxed" }, item.desc)
+              )
+            )
+          )
+        )
+      )
+    );
+
+    const ChatMessage = ({ role, text }) => (
+      React.createElement('div', { className: `flex ${role === 'user' ? 'justify-end' : 'justify-start'} mb-4` },
+        React.createElement('div', { className: `max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-md ${
+          role === 'user'
+            ? 'bg-emerald-600 text-white rounded-tr-sm'
+            : 'bg-slate-700 text-slate-200 rounded-tl-sm border border-slate-600'
+        }` }, text)
+      )
+    );
+
+    // --- COMPARATIVE SIMULATOR ---
+
+    const ComparativeSimulator = () => {
+      const [amount, setAmount] = useState(10000);
+      const [horizon, setHorizon] = useState(3);
+      const [resultA, setResultA] = useState({ value: 0, profit: 0, pct: 0 });
+      const [resultB, setResultB] = useState({ value: 0, profit: 0, pct: 0 });
+
+      useEffect(() => {
+        const calculatePerformance = (strategyData, years) => {
+          let relevantYears = [];
+          const allYears = strategyData.annualReturns;
+
+          if (years === 1) relevantYears = allYears.slice(-2);
+          else if (years === 3) relevantYears = allYears.slice(-4);
+          else relevantYears = allYears.slice(-6);
+
+          let finalVal = amount;
+          relevantYears.forEach(y => {
+            finalVal *= y.factor;
+          });
+
+          return {
+            value: finalVal,
+            profit: finalVal - amount,
+            pct: ((finalVal - amount) / amount) * 100
+          };
+        };
+
+        setResultA(calculatePerformance(STRATEGY_A_DATA, horizon));
+        setResultB(calculatePerformance(STRATEGY_B_DATA, horizon));
+
+      }, [amount, horizon]);
+
+      const winner = resultA.value > resultB.value ? 'A' : 'B';
+      const diff = Math.abs(resultA.value - resultB.value);
+
+      return React.createElement('div', { className: "bg-slate-800 border border-slate-700 rounded-xl p-6 shadow-xl" },
+        React.createElement(SectionTitle, {
+          title: "Comparative Investment Simulator",
+          subtitle: "Compare hypothetical returns over fixed time horizons",
+          icon: ArrowRightLeft,
+          rightContent: React.createElement('div', { className: "flex bg-slate-900 rounded-lg p-1 border border-slate-700" },
+            [1, 3, 5].map(yr =>
+              React.createElement('button', {
+                key: yr,
+                onClick: () => setHorizon(yr),
+                className: `px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-1 ${
+                  horizon === yr
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`
+              },
+                React.createElement(Calendar, { size: 12 }), ` ${yr} Year${yr > 1 ? 's' : ''}`
+              )
+            )
+          )
+        }),
+        React.createElement('div', { className: "grid grid-cols-1 lg:grid-cols-12 gap-8" },
+          React.createElement('div', { className: "lg:col-span-4 space-y-6" },
+            React.createElement('div', null,
+              React.createElement('label', { className: "block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2" }, "Investment Amount ($)"),
+              React.createElement('div', { className: "relative" },
+                React.createElement('div', { className: "absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none" },
+                  React.createElement(DollarSign, { className: "h-5 w-5 text-slate-500" })
+                ),
+                React.createElement('input', {
+                  type: "number",
+                  value: amount,
+                  onChange: (e) => setAmount(Number(e.target.value)),
+                  className: "block w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 text-lg font-mono"
+                })
+              )
+            ),
+            React.createElement('div', { className: "bg-slate-900/50 p-4 rounded-lg border border-slate-700/50" },
+              React.createElement('h4', { className: "text-white font-bold text-sm mb-2 flex items-center gap-2" },
+                React.createElement(Award, { size: 16, className: "text-amber-400" }),
+                `Winner: ${winner === 'A' ? STRATEGY_A_DATA.shortName : STRATEGY_B_DATA.shortName}`
+              ),
+              React.createElement('p', { className: "text-slate-400 text-xs" },
+                "Outperformed by ",
+                React.createElement('span', { className: "text-emerald-400 font-bold font-mono" }, `$${diff.toLocaleString(undefined, {maximumFractionDigits: 0})}`),
+                ` over the selected ${horizon}-year period.`
+              )
+            )
+          ),
+          React.createElement('div', { className: "lg:col-span-8 grid grid-cols-1 md:grid-cols-2 gap-4" },
+            // Strategy A Card
+            React.createElement('div', { className: `p-5 rounded-xl border transition-all ${winner === 'A' ? 'bg-emerald-900/20 border-emerald-500/50 shadow-lg shadow-emerald-900/20' : 'bg-slate-800 border-slate-700 opacity-80'}` },
+              React.createElement('div', { className: "flex justify-between items-start mb-4" },
+                React.createElement('div', null,
+                  React.createElement('div', { className: "text-xs text-slate-400 uppercase tracking-wide font-bold" }, "Strategy A"),
+                  React.createElement('div', { className: "text-white font-bold text-lg" }, STRATEGY_A_DATA.shortName)
+                ),
+                winner === 'A' && React.createElement('div', { className: "bg-emerald-500 text-slate-900 text-xs font-bold px-2 py-1 rounded-full" }, "Winner")
+              ),
+              React.createElement('div', { className: "space-y-2" },
+                React.createElement('div', { className: "flex justify-between text-sm" },
+                  React.createElement('span', { className: "text-slate-400" }, "Final Balance"),
+                  React.createElement('span', { className: "text-white font-mono font-bold" }, `$${resultA.value.toLocaleString(undefined, {maximumFractionDigits: 0})}`)
+                ),
+                React.createElement('div', { className: "flex justify-between text-sm" },
+                  React.createElement('span', { className: "text-slate-400" }, "Total Profit"),
+                  React.createElement('span', { className: "text-emerald-400 font-mono font-bold" }, `+$${resultA.profit.toLocaleString(undefined, {maximumFractionDigits: 0})}`)
+                ),
+                React.createElement('div', { className: "mt-4 pt-3 border-t border-slate-700/50" },
+                  React.createElement('div', { className: "text-3xl font-bold text-white text-center" }, `${resultA.pct > 0 ? '+' : ''}${resultA.pct.toFixed(1)}%`),
+                  React.createElement('div', { className: "text-center text-xs text-slate-500 mt-1" }, "Total Return")
+                )
+              )
+            ),
+            // Strategy B Card
+            React.createElement('div', { className: `p-5 rounded-xl border transition-all ${winner === 'B' ? 'bg-emerald-900/20 border-emerald-500/50 shadow-lg shadow-emerald-900/20' : 'bg-slate-800 border-slate-700 opacity-80'}` },
+              React.createElement('div', { className: "flex justify-between items-start mb-4" },
+                React.createElement('div', null,
+                  React.createElement('div', { className: "text-xs text-slate-400 uppercase tracking-wide font-bold" }, "Strategy B"),
+                  React.createElement('div', { className: "text-white font-bold text-lg" }, STRATEGY_B_DATA.shortName)
+                ),
+                winner === 'B' && React.createElement('div', { className: "bg-emerald-500 text-slate-900 text-xs font-bold px-2 py-1 rounded-full" }, "Winner")
+              ),
+              React.createElement('div', { className: "space-y-2" },
+                React.createElement('div', { className: "flex justify-between text-sm" },
+                  React.createElement('span', { className: "text-slate-400" }, "Final Balance"),
+                  React.createElement('span', { className: "text-white font-mono font-bold" }, `$${resultB.value.toLocaleString(undefined, {maximumFractionDigits: 0})}`)
+                ),
+                React.createElement('div', { className: "flex justify-between text-sm" },
+                  React.createElement('span', { className: "text-slate-400" }, "Total Profit"),
+                  React.createElement('span', { className: `font-mono font-bold ${resultB.profit >= 0 ? 'text-emerald-400' : 'text-red-400'}` },
+                    `${resultB.profit >= 0 ? '+' : ''}$${resultB.profit.toLocaleString(undefined, {maximumFractionDigits: 0})}`)
+                ),
+                React.createElement('div', { className: "mt-4 pt-3 border-t border-slate-700/50" },
+                  React.createElement('div', { className: `text-3xl font-bold text-center ${resultB.pct >= 0 ? 'text-white' : 'text-red-400'}` },
+                    `${resultB.pct > 0 ? '+' : ''}${resultB.pct.toFixed(1)}%`),
+                  React.createElement('div', { className: "text-center text-xs text-slate-500 mt-1" }, "Total Return")
+                )
+              )
+            )
+          )
+        ),
+        // Visual Bar Comparison
+        React.createElement('div', { className: "mt-8 h-4 bg-slate-900 rounded-full overflow-hidden flex" },
+          React.createElement('div', {
+            className: "bg-emerald-500 h-full transition-all duration-500",
+            style: { width: `${(resultA.value / (resultA.value + resultB.value)) * 100}%` }
+          }),
+          React.createElement('div', {
+            className: "bg-blue-600 h-full transition-all duration-500",
+            style: { width: `${(resultB.value / (resultA.value + resultB.value)) * 100}%` }
+          })
+        ),
+        React.createElement('div', { className: "flex justify-between text-xs text-slate-500 mt-2" },
+          React.createElement('span', { className: "text-emerald-400 font-bold" }, "Strategy A Ratio"),
+          React.createElement('span', { className: "text-blue-400 font-bold" }, "Strategy B Ratio")
+        )
+      );
+    };
+
+    // --- MAIN DASHBOARD COMPONENT ---
+
+    const StrategyDashboardView = ({ data }) => {
+      const [investment, setInvestment] = useState(10000);
+      const [simulationData, setSimulationData] = useState([]);
+      const [portfolioTimeframe, setPortfolioTimeframe] = useState('YTD');
+      const [reportLoading, setReportLoading] = useState(false);
+      const [reportText, setReportText] = useState(null);
+
+      useEffect(() => {
+        const recentYears = data.annualReturns.slice(-4);
+
+        let chartData = [{ year: 'Start', balance: investment, profit: 0, returnPct: 0 }];
+        let bal = investment;
+
+        recentYears.forEach(period => {
+           let prev = bal;
+           bal = bal * period.factor;
+           chartData.push({
+             year: period.year,
+             balance: Math.round(bal),
+             profit: Math.round(bal - investment),
+             returnPct: period.returnPct,
+             growth: Math.round(bal - prev)
+           });
+        });
+
+        setSimulationData(chartData);
+      }, [investment, data]);
+
+      const finalValue = simulationData.length > 0 ? simulationData[simulationData.length - 1].balance : 0;
+      const totalProfit = finalValue - investment;
+      const totalReturn = investment > 0 ? ((totalProfit / investment) * 100).toFixed(1) : 0;
+
+      const handleGenerateReport = async () => {
+        setReportLoading(true);
+        setReportText(null);
+        const prompt = `Write a professional client summary for investing $${investment.toLocaleString()} in the ${data.name} strategy. Final Value: $${finalValue.toLocaleString()}. Strategy Description: ${data.description}. Key Stats: Total Return ${data.stats.totalReturn}, CAGR ${data.stats.cagr}.`;
+        const response = await callGemini(prompt, "You are a senior portfolio manager.");
+        setReportText(response);
+        setReportLoading(false);
+      };
+
+      return React.createElement('div', { className: "space-y-8" },
+        // Top Metrics
+        React.createElement('div', { className: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" },
+          React.createElement(MetricCard, { title: "Total Return", value: data.stats.totalReturn, subtext: "Long Term", icon: TrendingUp, trend: "positive" }),
+          React.createElement(MetricCard, { title: "Max Drawdown", value: data.stats.maxDrawdown, subtext: "Historical Worst", icon: AlertTriangle, trend: "negative" }),
+          React.createElement(MetricCard, { title: "CAGR", value: data.stats.cagr, subtext: "Compound Growth", icon: Activity, trend: "positive" }),
+          React.createElement(MetricCard, { title: "Top Sector", value: data.stats.topSector, subtext: "Highest Allocation", icon: PieIcon, trend: "neutral" })
+        ),
+
+        // Strategy Profile Section
+        React.createElement('div', { className: "space-y-6" },
+          React.createElement(SectionTitle, { title: "Strategy Profile & Analysis", subtitle: "Executive Summary and Qualitative Assessment", icon: Info }),
+
+          // Executive Summary
+          React.createElement('div', { className: "bg-slate-800 border border-slate-700 rounded-xl p-6" },
+            React.createElement('h3', { className: "text-white font-bold mb-4 flex items-center gap-2" },
+              React.createElement(FileText, { size: 20, className: "text-blue-400" }),
+              "Executive Summary"
+            ),
+            React.createElement('p', { className: "text-slate-400 text-sm leading-relaxed" }, data.analysis.executiveSummary)
+          ),
+
+          // Mechanics
+          React.createElement(CollapsibleCard, { title: "Mechanics & Composition", icon: RefreshCw, defaultExpanded: false },
+            React.createElement('div', { className: "grid grid-cols-1 md:grid-cols-3 gap-6" },
+              data.analysis.mechanics.map((mech, i) =>
+                React.createElement('div', { key: i, className: "bg-slate-900/50 p-4 rounded-lg border border-slate-700/50" },
+                  React.createElement('div', { className: "text-white text-sm font-semibold mb-2" }, mech.title),
+                  React.createElement('div', { className: "text-slate-400 text-xs leading-relaxed" }, mech.desc)
+                )
+              )
+            )
+          ),
+
+          // Strengths & Weaknesses
+          React.createElement(CollapsibleCard, { title: "Strategic Analysis: Strengths & Risks", icon: Shield, defaultExpanded: false },
+            React.createElement('div', { className: "grid grid-cols-1 md:grid-cols-2 gap-6" },
+              React.createElement(AnalysisCard, { title: "Strengths & Advantages", items: data.analysis.strengths, type: "strength" }),
+              React.createElement(AnalysisCard, { title: "Weaknesses & Risks", items: data.analysis.weaknesses, type: "weakness" })
+            )
+          )
+        ),
+
+        // Simulator
+        React.createElement('div', { className: "grid grid-cols-1 lg:grid-cols-3 gap-8" },
+          React.createElement('div', { className: "lg:col-span-1 space-y-4" },
+            React.createElement('div', { className: "bg-slate-800 border border-slate-700 rounded-xl p-6 shadow-lg" },
+              React.createElement(SectionTitle, { title: "Investment Simulator", subtitle: "Returns since 2023" }),
+              React.createElement('div', { className: "space-y-4" },
+                React.createElement('div', null,
+                  React.createElement('label', { className: "block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2" }, "Initial Capital ($)"),
+                  React.createElement('div', { className: "relative" },
+                    React.createElement('div', { className: "absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none" },
+                      React.createElement(DollarSign, { className: "h-5 w-5 text-slate-500" })
+                    ),
+                    React.createElement('input', {
+                      type: "number",
+                      value: investment,
+                      onChange: (e) => setInvestment(Number(e.target.value)),
+                      className: "block w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-emerald-500/50 outline-none"
+                    })
+                  )
+                ),
+                React.createElement('div', { className: "pt-4 border-t border-slate-700/50 space-y-3" },
+                  React.createElement('div', { className: "flex justify-between items-end" },
+                    React.createElement('span', { className: "text-slate-400 text-sm" }, "Net Profit"),
+                    React.createElement('span', { className: `text-xl font-bold font-mono ${totalProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}` },
+                      `${totalProfit >= 0 ? '+' : ''}$${totalProfit.toLocaleString()}`)
+                  ),
+                  React.createElement('div', { className: "flex justify-between items-end pt-2 border-t border-slate-700/50" },
+                    React.createElement('span', { className: "text-white font-medium" }, "Final Balance"),
+                    React.createElement('span', { className: "text-white text-2xl font-bold font-mono" }, `$${finalValue.toLocaleString()}`)
+                  )
+                ),
+                React.createElement('button', {
+                  onClick: handleGenerateReport,
+                  disabled: reportLoading,
+                  className: "w-full flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold py-3 px-4 rounded-lg mt-2 hover:opacity-90 transition-opacity"
+                },
+                  reportLoading ? React.createElement(Loader2, { className: "animate-spin", size: 18 }) : React.createElement(Sparkles, { size: 18 }),
+                  reportLoading ? 'Analyzing...' : 'Generate Report'
+                ),
+                reportText && React.createElement('div', { className: "mt-4 p-4 bg-slate-900/80 border border-slate-700 rounded-lg relative" },
+                  React.createElement('button', { onClick: () => setReportText(null), className: "absolute top-2 right-2 text-slate-500 hover:text-white" },
+                    React.createElement(X, { size: 14 })
+                  ),
+                  React.createElement('p', { className: "text-slate-300 text-sm italic" }, `"${reportText}"`)
+                )
+              )
+            )
+          ),
+          React.createElement('div', { className: "lg:col-span-2 bg-slate-800 border border-slate-700 rounded-xl p-6 shadow-lg flex flex-col" },
+            React.createElement('div', { className: "flex justify-between items-center mb-6" },
+              React.createElement('h3', { className: "text-lg font-bold text-white" }, "Projected Growth Curve"),
+              React.createElement('div', { className: "flex items-center space-x-2 text-sm" },
+                React.createElement('span', { className: "inline-block w-3 h-3 bg-emerald-500 rounded-full" }),
+                React.createElement('span', { className: "text-slate-300" }, "Equity")
+              )
+            ),
+            React.createElement('div', { className: "flex-grow min-h-[300px]" },
+              React.createElement(ResponsiveContainer, { width: "100%", height: "100%" },
+                React.createElement(LineChart, { data: simulationData, margin: { top: 10, right: 30, left: 10, bottom: 10 } },
+                  React.createElement(CartesianGrid, { strokeDasharray: "3 3", stroke: "#334155", vertical: false }),
+                  React.createElement(XAxis, { dataKey: "year", stroke: "#94a3b8", axisLine: false, tickLine: false }),
+                  React.createElement(YAxis, { stroke: "#94a3b8", tickFormatter: (val) => `$${val/1000}k`, axisLine: false, tickLine: false }),
+                  React.createElement(Tooltip, { contentStyle: { backgroundColor: '#1e293b', borderColor: '#334155', color: '#f8fafc' }, formatter: (value) => [`$${value.toLocaleString()}`, 'Equity'] }),
+                  React.createElement(Line, { type: "monotone", dataKey: "balance", stroke: "#10b981", strokeWidth: 3, dot: { fill: '#10b981', strokeWidth: 2, r: 4 }, activeDot: { r: 8, fill: '#fff' } })
+                )
+              )
+            )
+          )
+        ),
+
+        // Holdings & Factors
+        React.createElement('div', { className: "grid grid-cols-1 lg:grid-cols-2 gap-8" },
+          React.createElement('div', { className: "bg-slate-800 border border-slate-700 rounded-xl p-6" },
+            React.createElement(SectionTitle, {
+              title: "Current Holdings",
+              subtitle: "Top positions by weight",
+              icon: Briefcase,
+              rightContent: React.createElement('div', { className: "flex bg-slate-700 rounded-lg p-1" },
+                ['1M', 'YTD', '1Y'].map(tf =>
+                  React.createElement('button', {
+                    key: tf,
+                    onClick: () => setPortfolioTimeframe(tf),
+                    className: `px-3 py-1 text-xs rounded ${portfolioTimeframe === tf ? 'bg-slate-600 text-white' : 'text-slate-400'}`
+                  }, tf)
+                )
+              )
+            }),
+            React.createElement('div', { className: "space-y-3" },
+              data.currentHoldings.map((stock) => {
+                const val = investment * stock.Weight;
+                const ret = stock.Returns?.[portfolioTimeframe] || 0;
+                return React.createElement('div', { key: stock.Symbol, className: "flex justify-between items-center p-3 bg-slate-900/50 rounded-lg border border-slate-700/50 hover:border-slate-600 transition-colors" },
+                  React.createElement('div', { className: "flex items-center gap-3" },
+                    React.createElement('div', { className: "w-10 h-10 rounded bg-slate-800 flex items-center justify-center font-bold text-xs text-slate-300" }, stock.Symbol),
+                    React.createElement('div', null,
+                      React.createElement('div', { className: "text-white font-medium text-sm" }, stock.Name),
+                      React.createElement('div', { className: "text-slate-500 text-xs" }, `${(stock.Weight * 100).toFixed(1)}% Alloc`)
+                    )
+                  ),
+                  React.createElement('div', { className: "text-right" },
+                    React.createElement('div', { className: "text-white font-mono text-sm" }, `$${val.toLocaleString(undefined, { maximumFractionDigits: 0 })}`),
+                    React.createElement('div', { className: `text-xs ${ret >= 0 ? 'text-emerald-400' : 'text-red-400'}` }, `${ret >= 0 ? '+' : ''}${(ret * 100).toFixed(1)}%`)
+                  )
+                );
+              })
+            )
+          ),
+          React.createElement('div', { className: "space-y-8" },
+            React.createElement('div', { className: "bg-slate-800 border border-slate-700 rounded-xl p-6" },
+              React.createElement(SectionTitle, { title: "Factor Exposure", subtitle: "Strategy Factor Loading", icon: Layers }),
+              React.createElement('div', { className: "space-y-4" },
+                data.factors.map(f =>
+                  React.createElement('div', { key: f.name },
+                    React.createElement('div', { className: "flex justify-between text-xs mb-1" },
+                      React.createElement('span', { className: "text-slate-300" }, f.name),
+                      React.createElement('span', { className: "text-slate-500" }, f.desc)
+                    ),
+                    React.createElement('div', { className: "w-full bg-slate-900 rounded-full h-2" },
+                      React.createElement('div', { className: "bg-blue-500 h-2 rounded-full", style: { width: `${f.value}%` } })
+                    )
+                  )
+                )
+              )
+            ),
+            React.createElement('div', { className: "bg-slate-800 border border-slate-700 rounded-xl p-6" },
+              React.createElement(SectionTitle, { title: "Performance Highlights", subtitle: "Key Historical Events", icon: Clock }),
+              React.createElement('div', { className: "space-y-4" },
+                data.performanceHighlights.map((h, i) =>
+                  React.createElement('div', { key: i, className: "flex justify-between items-center border-b border-slate-700/50 pb-3 last:border-0 last:pb-0" },
+                    React.createElement('div', null,
+                      React.createElement('div', { className: "text-white font-bold" },
+                        h.year,
+                        React.createElement('span', { className: "text-slate-500 font-normal text-xs ml-1" }, h.event)
+                      ),
+                      React.createElement('div', { className: "text-slate-400 text-xs mt-1" }, h.context)
+                    ),
+                    React.createElement('div', { className: "text-right" },
+                      React.createElement('div', { className: `font-bold ${h.strategy.includes('-') ? 'text-red-400' : 'text-emerald-400'}` }, h.strategy),
+                      React.createElement('div', { className: "text-slate-500 text-xs" }, `vs ${h.benchmark}`)
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      );
+    };
+
+    // --- COMPARISON VIEW COMPONENT ---
+
+    const ComparisonView = () => {
+      const metrics = [
+        { label: 'Total Return', a: STRATEGY_A_DATA.stats.totalReturn, b: STRATEGY_B_DATA.stats.totalReturn, better: 'B' },
+        { label: 'CAGR', a: STRATEGY_A_DATA.stats.cagr, b: STRATEGY_B_DATA.stats.cagr, better: 'A' },
+        { label: 'Max Drawdown', a: STRATEGY_A_DATA.stats.maxDrawdown, b: STRATEGY_B_DATA.stats.maxDrawdown, better: 'A' },
+        { label: 'Top Sector', a: STRATEGY_A_DATA.stats.topSector, b: STRATEGY_B_DATA.stats.topSector, better: 'Neutral' },
+      ];
+
+      const chartData = [
+        { year: 'Start', A: 100, B: 100 },
+        { year: '2023', A: 131, B: 65 },
+        { year: '2024', A: 135, B: 62 },
+        { year: '2025', A: 195, B: 83 },
+        { year: '2026', A: 206, B: 85 },
+      ];
+
+      return React.createElement('div', { className: "space-y-8" },
+        React.createElement(ComparativeSimulator),
+
+        React.createElement('div', { className: "bg-slate-800 border border-slate-700 rounded-xl p-8" },
+          React.createElement(SectionTitle, { title: "Strategy Showdown", subtitle: "Recent Performance (Since 2023)", icon: BarChart2 }),
+
+          React.createElement('div', { className: "h-[300px] mb-8" },
+            React.createElement(ResponsiveContainer, { width: "100%", height: "100%" },
+              React.createElement(LineChart, { data: chartData },
+                React.createElement(CartesianGrid, { strokeDasharray: "3 3", stroke: "#334155", vertical: false }),
+                React.createElement(XAxis, { dataKey: "year", stroke: "#94a3b8" }),
+                React.createElement(YAxis, { stroke: "#94a3b8" }),
+                React.createElement(Tooltip, { contentStyle: { backgroundColor: '#1e293b', borderColor: '#334155' } }),
+                React.createElement(Legend),
+                React.createElement(Line, { type: "monotone", dataKey: "A", name: "Alpha Barbell", stroke: "#10b981", strokeWidth: 3, dot: {r:4} }),
+                React.createElement(Line, { type: "monotone", dataKey: "B", name: "High Risk", stroke: "#f43f5e", strokeWidth: 3, dot: {r:4} })
+              )
+            )
+          ),
+
+          React.createElement('div', { className: "grid grid-cols-1 md:grid-cols-2 gap-8" },
+            React.createElement('div', null,
+              React.createElement('h4', { className: "text-white font-bold mb-4 flex items-center gap-2" },
+                React.createElement(Target, { size: 18, className: "text-blue-400" }),
+                "Metric Comparison"
+              ),
+              React.createElement('div', { className: "space-y-3" },
+                metrics.map((m, i) =>
+                  React.createElement('div', { key: i, className: "flex justify-between items-center p-3 bg-slate-900/50 rounded-lg" },
+                    React.createElement('span', { className: "text-slate-400 text-sm" }, m.label),
+                    React.createElement('div', { className: "flex gap-4 text-sm font-mono font-bold" },
+                      React.createElement('span', { className: m.better === 'A' ? 'text-emerald-400' : 'text-slate-500' }, m.a),
+                      React.createElement('span', { className: "text-slate-600" }, "vs"),
+                      React.createElement('span', { className: m.better === 'B' ? 'text-emerald-400' : 'text-slate-500' }, m.b)
+                    )
+                  )
+                )
+              )
+            ),
+            React.createElement('div', null,
+              React.createElement('h4', { className: "text-white font-bold mb-4 flex items-center gap-2" },
+                React.createElement(Award, { size: 18, className: "text-amber-400" }),
+                "The Verdict"
+              ),
+              React.createElement('div', { className: "bg-slate-900/50 p-4 rounded-lg text-sm text-slate-300 leading-relaxed border-l-2 border-emerald-500" },
+                React.createElement('p', { className: "mb-2" },
+                  React.createElement('strong', { className: "text-emerald-400" }, "Alpha Barbell (Strategy A)"),
+                  " is the superior choice for risk-adjusted returns. It maintained growth during the 2023-2024 period where Strategy B suffered a massive 40% drawdown."
+                ),
+                React.createElement('p', null,
+                  React.createElement('strong', { className: "text-red-400" }, "High Risk (Strategy B)"),
+                  " offers explosive upside potential (see 2009's +81%), but its volatility makes it unsuitable for capital preservation. It is currently recovering from a deep drawdown."
+                )
+              )
+            )
+          )
+        ),
+
+        // Factor Comparison & Stress Tests
+        React.createElement('div', { className: "grid grid-cols-1 lg:grid-cols-2 gap-8" },
+          React.createElement('div', { className: "bg-slate-800 border border-slate-700 rounded-xl p-6" },
+            React.createElement(SectionTitle, { title: "Factor Comparison", subtitle: "Risk Driver Breakdown", icon: Layers }),
+            React.createElement('div', { className: "space-y-6" },
+              STRATEGY_A_DATA.factors.map((f, i) =>
+                React.createElement('div', { key: f.name },
+                  React.createElement('div', { className: "flex justify-between text-xs mb-1" },
+                    React.createElement('span', { className: "text-slate-300 font-bold" }, f.name)
+                  ),
+                  React.createElement('div', { className: "flex items-center gap-4" },
+                    React.createElement('div', { className: "w-1/2 flex items-center gap-2 justify-end" },
+                      React.createElement('span', { className: "text-xs text-emerald-400" }, f.value),
+                      React.createElement('div', { className: "h-2 bg-emerald-500 rounded-l-full", style: { width: `${f.value}%` } })
+                    ),
+                    React.createElement('div', { className: "w-1/2 flex items-center gap-2" },
+                      React.createElement('div', { className: "h-2 bg-indigo-500 rounded-r-full", style: { width: `${STRATEGY_B_DATA.factors[i].value}%` } }),
+                      React.createElement('span', { className: "text-xs text-indigo-400" }, STRATEGY_B_DATA.factors[i].value)
+                    )
+                  )
+                )
+              ),
+              React.createElement('div', { className: "flex justify-center gap-6 mt-4 text-xs" },
+                React.createElement('div', { className: "flex items-center gap-2" },
+                  React.createElement('div', { className: "w-3 h-3 bg-emerald-500 rounded-full" }),
+                  "Alpha Barbell"
+                ),
+                React.createElement('div', { className: "flex items-center gap-2" },
+                  React.createElement('div', { className: "w-3 h-3 bg-indigo-500 rounded-full" }),
+                  "High Risk"
+                )
+              )
+            )
+          ),
+
+          React.createElement('div', { className: "bg-slate-800 border border-slate-700 rounded-xl p-6" },
+            React.createElement(SectionTitle, { title: "Historical Stress Tests", subtitle: "Crisis Performance", icon: Clock }),
+            React.createElement('div', { className: "space-y-4" },
+              STRATEGY_A_DATA.performanceHighlights.map((h, i) =>
+                React.createElement('div', { key: i, className: "border-b border-slate-700/50 pb-4 last:border-0" },
+                  React.createElement('div', { className: "flex justify-between items-center mb-2" },
+                    React.createElement('span', { className: "text-white font-bold text-sm" }, `${h.year} - ${h.event}`),
+                    React.createElement('span', { className: "text-slate-500 text-xs" }, `Benchmark: ${h.benchmark}`)
+                  ),
+                  React.createElement('div', { className: "grid grid-cols-2 gap-4" },
+                    React.createElement('div', { className: "bg-slate-900/50 p-2 rounded border border-slate-700/30" },
+                      React.createElement('div', { className: "text-xs text-emerald-400 font-bold mb-1" }, "Alpha Barbell"),
+                      React.createElement('div', { className: `text-sm font-mono font-bold ${h.strategy.includes('-') ? 'text-red-400' : 'text-emerald-400'}` }, h.strategy),
+                      React.createElement('div', { className: "text-[10px] text-slate-400 mt-1" }, h.context)
+                    ),
+                    React.createElement('div', { className: "bg-slate-900/50 p-2 rounded border border-slate-700/30" },
+                      React.createElement('div', { className: "text-xs text-indigo-400 font-bold mb-1" }, "High Risk"),
+                      React.createElement('div', { className: `text-sm font-mono font-bold ${STRATEGY_B_DATA.performanceHighlights[i].strategy.includes('-') ? 'text-red-400' : 'text-emerald-400'}` },
+                        STRATEGY_B_DATA.performanceHighlights[i].strategy
+                      ),
+                      React.createElement('div', { className: "text-[10px] text-slate-400 mt-1" }, STRATEGY_B_DATA.performanceHighlights[i].context)
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      );
+    };
+
+    // --- APP ROOT ---
+
+    function LimexStrategyDashboard() {
+      const [currentView, setCurrentView] = useState('A');
+      const [chatInput, setChatInput] = useState('');
+      const [chatHistory, setChatHistory] = useState([{ role: 'assistant', text: "Hello! I can compare the Alpha Barbell vs. High Risk strategies. Ask me which one performed better in 2008!" }]);
+      const [chatLoading, setChatLoading] = useState(false);
+      const [isChatExpanded, setIsChatExpanded] = useState(false);
+      const chatEndRef = useRef(null);
+
+      useEffect(() => {
+        if (isChatExpanded) chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, [chatHistory, isChatExpanded]);
+
+      const handleChatSubmit = async (e) => {
+        e.preventDefault();
+        if (!chatInput.trim()) return;
+        setIsChatExpanded(true);
+        setChatHistory(prev => [...prev, { role: 'user', text: chatInput }]);
+        setChatLoading(true);
+        const context = `Comparing two strategies. A: Alpha Barbell (Steady, Inflation Hedge, +106% 3Y). B: High Risk (Volatile, Tech/Bank heavy, -35% in 2023). User asks: ${chatInput}`;
+        const response = await callGemini(context, "You are a financial analyst comparing two portfolios.");
+        setChatHistory(prev => [...prev, { role: 'assistant', text: response }]);
+        setChatInput('');
+        setChatLoading(false);
+      };
+
+      return React.createElement('div', { className: "min-h-screen bg-slate-900 text-slate-100 font-sans selection:bg-emerald-500/30 pb-32" },
+        // Navigation Header
+        React.createElement('header', { className: "border-b border-slate-800 bg-slate-900/90 backdrop-blur-md sticky top-0 z-20" },
+          React.createElement('div', { className: "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between" },
+            React.createElement('div', { className: "flex items-center space-x-3" },
+              React.createElement('div', { className: "bg-gradient-to-tr from-emerald-500 to-teal-600 h-8 w-8 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-500/20" },
+                React.createElement(TrendingUp, { className: "text-white", size: 20 })
+              ),
+              React.createElement('h1', { className: "text-lg font-bold tracking-tight text-white" },
+                "Limex",
+                React.createElement('span', { className: "text-slate-400" }, "Analytics")
+              )
+            ),
+
+            React.createElement('nav', { className: "flex bg-slate-800 rounded-lg p-1 border border-slate-700" },
+              React.createElement('button', {
+                onClick: () => setCurrentView('A'),
+                className: `px-4 py-1.5 text-sm font-medium rounded-md transition-all flex items-center gap-2 ${currentView === 'A' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`
+              },
+                React.createElement(Shield, { size: 16 }), "Alpha Barbell"
+              ),
+              React.createElement('button', {
+                onClick: () => setCurrentView('B'),
+                className: `px-4 py-1.5 text-sm font-medium rounded-md transition-all flex items-center gap-2 ${currentView === 'B' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`
+              },
+                React.createElement(Zap, { size: 16 }), "High Risk"
+              ),
+              React.createElement('button', {
+                onClick: () => setCurrentView('COMPARE'),
+                className: `px-4 py-1.5 text-sm font-medium rounded-md transition-all flex items-center gap-2 ${currentView === 'COMPARE' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`
+              },
+                React.createElement(ArrowRightLeft, { size: 16 }), "Compare"
+              )
+            )
+          )
+        ),
+
+        React.createElement('main', { className: "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8" },
+          currentView === 'A' && React.createElement(StrategyDashboardView, { data: STRATEGY_A_DATA }),
+          currentView === 'B' && React.createElement(StrategyDashboardView, { data: STRATEGY_B_DATA }),
+          currentView === 'COMPARE' && React.createElement(ComparisonView)
+        ),
+
+        // Floating Chat
+        React.createElement('div', { className: "fixed bottom-0 left-0 right-0 z-50 px-4 pb-4 flex justify-center items-end pointer-events-none" },
+          React.createElement('div', { className: "w-full max-w-3xl pointer-events-auto flex flex-col items-center" },
+            isChatExpanded && React.createElement('div', { className: "w-full bg-slate-800 border border-slate-700 rounded-t-xl shadow-2xl overflow-hidden flex flex-col max-h-[60vh]" },
+              React.createElement('div', { className: "p-4 border-b border-slate-700 bg-slate-900/95 backdrop-blur flex justify-between items-center" },
+                React.createElement('div', { className: "flex items-center gap-2" },
+                  React.createElement('div', { className: "bg-indigo-500 p-1.5 rounded-md" },
+                    React.createElement(Sparkles, { className: "text-white", size: 14 })
+                  ),
+                  React.createElement('span', { className: "font-bold text-white text-sm" }, "Portfolio Analyst AI")
+                ),
+                React.createElement('button', { onClick: () => setIsChatExpanded(false), className: "text-slate-400 hover:text-white" },
+                  React.createElement(ChevronDown, { size: 18 })
+                )
+              ),
+              React.createElement('div', { className: "flex-1 overflow-y-auto p-4 space-y-4 bg-slate-900/80" },
+                chatHistory.map((msg, i) => React.createElement(ChatMessage, { key: i, role: msg.role, text: msg.text })),
+                chatLoading && React.createElement('div', { className: "text-slate-400 text-xs italic ml-4" }, "Thinking..."),
+                React.createElement('div', { ref: chatEndRef })
+              )
+            ),
+            React.createElement('div', { className: `w-full bg-slate-800/90 backdrop-blur-md border border-slate-700 shadow-2xl transition-all duration-300 ${isChatExpanded ? 'rounded-b-xl border-t-0' : 'rounded-2xl hover:border-slate-500'}` },
+              React.createElement('form', { onSubmit: handleChatSubmit, className: "relative flex items-center p-2" },
+                React.createElement('div', { className: "p-2 ml-1" },
+                  React.createElement(MessageSquare, { className: "text-slate-400", size: 20 })
+                ),
+                React.createElement('input', {
+                  type: "text",
+                  value: chatInput,
+                  onFocus: () => setIsChatExpanded(true),
+                  onChange: (e) => setChatInput(e.target.value),
+                  placeholder: "Compare strategies or ask about risk...",
+                  className: "w-full bg-transparent text-white placeholder-slate-400 focus:outline-none px-3 py-3"
+                }),
+                React.createElement('button', {
+                  type: "submit",
+                  disabled: !chatInput.trim() || chatLoading,
+                  className: "p-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 transition-colors"
+                },
+                  React.createElement(ArrowUp, { size: 18 })
+                )
+              )
+            )
+          )
+        )
+      );
+    }
+
+    // Mount the app
+    const root = createRoot(document.getElementById('root'));
+    root.render(React.createElement(LimexStrategyDashboard));
+  </script>
+</body>
+</html>
